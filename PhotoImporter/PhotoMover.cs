@@ -12,7 +12,7 @@ namespace PhotoImporter
     public class PhotoMover
     {
         #region Properties
-        private readonly static List<string> s_validFileTypes = new List<string>() { ".jpg", ".jpeg", ".png", ".mp4", ".mov", ".wmv", ".avi", ".mpg" };
+        private readonly static List<string> s_validFileTypes = new List<string>() { ".jpg", ".jpeg", ".png", ".mp4", ".mov", ".wmv", ".avi", ".mpg", ".m4v" };
         private readonly object _logLocker = new object();
 
         private bool _cancelled = false;
