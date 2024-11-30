@@ -160,6 +160,7 @@ namespace PhotoImporter
             {
                 txtOutput.Text += $"{e.MessageTime} - {e.Message}{Environment.NewLine}";
                 txtOutput.ScrollToEnd();
+                txtOutput.CaretIndex = txtOutput.Text.Length;
             }, null);
         }
 
