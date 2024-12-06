@@ -12,7 +12,6 @@ namespace PhotoImporter
     public class PhotoMover
     {
         #region Properties
-        private readonly static List<string> s_validFileTypes = new List<string>() { ".jpg", ".jpeg", ".png", ".mp4", ".mov", ".wmv", ".avi", ".mpg", ".m4v" };
         private readonly object _logLocker = new object();
 
         private bool _cancelled = false;
@@ -95,7 +94,7 @@ namespace PhotoImporter
 
             List<string> toDelete = new List<string>();
 
-            IEnumerable<FileInfo> validFiles = directory.EnumerateFiles().Where(f => s_validFileTypes.Contains(f.Extension.ToLower()));
+            IEnumerable<FileInfo> validFiles = directory.EnumerateFiles().Where(f => Utilities.ValidFileTypes.Contains(f.Extension.ToLower()));
             if (!validFiles.Any())
             {
                 _LogMessage($"{directory.FullName} does not contain any valid images or videos...");
@@ -115,7 +114,7 @@ namespace PhotoImporter
                 _LogMessage($"...importing {importedCount} of {importCount}...");
                 try
                 {
-                    DateTime fileDate = validFile.LastWriteTime;
+                    DateTime fileDate = Utilities.GetDateTakenFromImage(validFile);
                     string outputFolder = ImportSettings.ToFolder;
                     if (ImportSettings.CreateSubFolders)
                     {
@@ -134,7 +133,7 @@ namespace PhotoImporter
                         FileInfo newPathInfo = new FileInfo(testPath);
                         if (ImportSettings.SkipDuplicates)
                         {
-                            if (_FileIsDuplicate(validFile, newPathInfo))
+                            if (Utilities.FileIsDuplicate(validFile, newPathInfo))
                             {
                                 copyFile = false;
                                 break;
@@ -174,34 +173,7 @@ namespace PhotoImporter
             {
                 MessageLogged?.Invoke(this, new LogMessage() { Message = message, MessageTime = DateTime.Now, MessageColour = logColour });
             }
-        }
-
-        private bool _FileIsDuplicate(FileInfo compareFrom, FileInfo compareTo)
-        {
-            if (compareFrom.Length != compareTo.Length)
-            {
-                return false;
-            }
-
-            using (FileStream compareFromFileStream = File.OpenRead(compareFrom.FullName))
-            {
-                using (FileStream compareToFileStream = File.OpenRead(compareTo.FullName))
-                {
-                    byte[] firstHash = MD5.Create().ComputeHash(compareFromFileStream);
-                    byte[] secondHash = MD5.Create().ComputeHash(compareToFileStream);
-
-                    for (int i = 0; i < firstHash.Length; i++)
-                    {
-                        if (firstHash[i] != secondHash[i])
-                        {
-                            return false;
-                        }
-                    }
-                }
-            }
-
-            return true;
-        }
+        }       
         #endregion
     }
 }

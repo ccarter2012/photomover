@@ -1,10 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics.Metrics;
+using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using System.Windows.Media.Media3D;
 
 namespace PhotoImporter
 {
@@ -28,6 +29,16 @@ namespace PhotoImporter
         };
 
         public string FolderToReorganize { get; }
+
+        private readonly object _logLocker = new object();
+
+        private bool _cancelled = false;
+
+        public bool Running { get; private set; } = false;
+        #endregion
+
+        #region Event Declarations
+        public event EventHandler<LogMessage>? MessageLogged;
         #endregion
 
         #region Initialisation
@@ -51,19 +62,19 @@ namespace PhotoImporter
         public void ReorganizeFolder()
         {
             DirectoryInfo mainFolder = new DirectoryInfo(FolderToReorganize);
-            foreach(DirectoryInfo subFolder in mainFolder.EnumerateDirectories())
+            foreach (DirectoryInfo subFolder in mainFolder.EnumerateDirectories())
             {
-                if(s_monthFolders.TryGetValue(subFolder.Name, out string correctedName))
+                if (s_monthFolders.TryGetValue(subFolder.Name, out string correctedName))
                 {
                     string newPath = Path.Combine(FolderToReorganize, correctedName);
                     subFolder.MoveTo(newPath);
-                    foreach(DirectoryInfo nonMainFolder in subFolder.EnumerateDirectories())
+                    foreach (DirectoryInfo nonMainFolder in subFolder.EnumerateDirectories())
                     {
                         _CopyContentsToRoute(nonMainFolder, newPath);
                         nonMainFolder.Delete();
                     }
-                }   
-                else if(s_monthFolders.Values.Any(v => v.Equals(subFolder.Name)))
+                }
+                else if (s_monthFolders.Values.Any(v => v.Equals(subFolder.Name)))
                 {
                     foreach (DirectoryInfo nonMainFolder in subFolder.EnumerateDirectories())
                     {
@@ -73,9 +84,73 @@ namespace PhotoImporter
                 }
             }
         }
+
+        public void ReorganizeFileDates()
+        {
+            List<string> movedFiles = new List<string>();
+            DirectoryInfo mainFolder = new DirectoryInfo(FolderToReorganize);
+            foreach (DirectoryInfo subFolder in mainFolder.EnumerateDirectories())
+            {
+                _ReorganizeFileDates(mainFolder, subFolder, ref movedFiles);
+            }
+        }
         #endregion
 
         #region Private methods
+        private void _ReorganizeFileDates(DirectoryInfo mainFolder, DirectoryInfo toScan, ref List<string> movedFiles)
+        {
+            foreach (DirectoryInfo subFolder in toScan.EnumerateDirectories())
+            {
+                _ReorganizeFileDates(mainFolder, subFolder, ref movedFiles);
+            }
+
+            IEnumerable<FileInfo> validFiles = toScan.EnumerateFiles().Where(f => Utilities.ValidFileTypes.Contains(f.Extension.ToLower()));
+            if (!validFiles.Any())
+            {
+                _LogMessage($"{toScan.FullName} does not contain any valid images or videos...");
+            }
+
+            int importCount = validFiles.Count();
+
+            _LogMessage($"{toScan.FullName} contains {importCount} valid images...");
+            int importedCount = 1;
+            foreach (FileInfo validFile in validFiles)
+            {
+                if (_cancelled)
+                {
+                    return;
+                }
+
+                _LogMessage($"...checking {importedCount} of {importCount}...");
+                if (movedFiles.Contains(validFile.FullName))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    DateTime fileDate = Utilities.GetDateTakenFromImage(validFile);
+                    string outputFolder = Path.Combine(mainFolder.FullName, fileDate.ToString("yyyy"), $"{fileDate:MM}-{fileDate:MMMM}");
+                    if (toScan.FullName == outputFolder)
+                    {
+                        continue;
+                    }
+
+                    if (!Directory.Exists(outputFolder))
+                    {
+                        Directory.CreateDirectory(outputFolder);
+                    }
+                    string outputFile = Path.Combine(outputFolder, validFile.Name);
+                    File.Move(validFile.FullName, outputFile);
+                    movedFiles.Add(outputFile);
+                }
+                catch (Exception ex)
+                {
+                    _LogMessage($"Error reorganizing {validFile.FullName}: {ex.Message}", Color.Red);
+                }
+            }
+        }
+
         private void _CopyContentsToRoute(DirectoryInfo toMove, string moveToPath)
         {
             foreach (DirectoryInfo subDirectory in toMove.EnumerateDirectories())
@@ -85,7 +160,7 @@ namespace PhotoImporter
             Dictionary<string, string> filesToMove = new Dictionary<string, string>();
             foreach (FileInfo file in toMove.EnumerateFiles())
             {
-                if(file.Name == "PhotoOrganizer.xml")
+                if (file.Name == "PhotoOrganizer.xml")
                 {
                     file.Delete();
                     continue;
@@ -104,6 +179,19 @@ namespace PhotoImporter
                     counter++;
                 }
                 File.Move(filePath.Key, newPath);
+            }
+        }
+
+        private void _LogMessage(string message)
+        {
+            _LogMessage(message, Color.Black);
+        }
+
+        private void _LogMessage(string message, Color logColour)
+        {
+            lock (_logLocker)
+            {
+                MessageLogged?.Invoke(this, new LogMessage() { Message = message, MessageTime = DateTime.Now, MessageColour = logColour });
             }
         }
         #endregion
